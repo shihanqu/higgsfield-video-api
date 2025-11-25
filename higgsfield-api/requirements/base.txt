@@ -1,0 +1,16 @@
+fastapi==0.115.7
+uvicorn==0.29.0
+tortoise-orm==0.20.0
+apscheduler==3.10.4
+bcrypt==4.2.0
+aiofiles==24.1.0
+httpx==0.28.1
+environs==11.0.0
+pydantic==2.9.2
+pydantic-settings==2.8.1
+python-dotenv==1.0.1
+pytest==8.2.2
+pytest-dotenv==0.5.2
+pytest-asyncio==0.23.7
+aiosqlite==0.20.0
+

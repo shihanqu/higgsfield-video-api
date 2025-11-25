@@ -1,0 +1,16 @@
+__pycache__/
+.DS_Store
+.vscode/
+.idea/
+.pytest_cache/
+.venv/
+logs/
+images/
+.env
+**/*.ipynb
+**/*.png
+db/
+secret_keys/
+*.png
+*.webp
+*.jpg
