@@ -1,57 +1,59 @@
 # Higgsfield API Service
 
-Этот проект представляет собой веб-сервис для работы с Higgsfield API, предоставляющий функциональность для создания и управления задачами генерации видео из изображений.
+This project is a web service for working with the Higgsfield API, providing functionality for creating and managing video generation tasks from images.
 
-## Технологии
+## Technologies
 
-- **Python 3**
-- **FastAPI**: Современный веб-фреймворк для создания API.
-- **Uvicorn**: ASGI-сервер для запуска FastAPI.
-- **Tortoise ORM**: Асинхронная ORM для работы с базой данных.
-- **APScheduler**: Планировщик задач для асинхронной обработки.
-- **Docker & Docker Compose**: Для контейнеризации и управления сервисами.
-- **Pytest**: Для автоматизированного тестирования.
+* **Python 3**
+* **FastAPI**: Modern web framework for building APIs.
+* **Uvicorn**: ASGI server for running FastAPI.
+* **Tortoise ORM**: Asynchronous ORM for working with the database.
+* **APScheduler**: Task scheduler for asynchronous processing.
+* **Docker & Docker Compose**: For containerization and service orchestration.
+* **Pytest**: For automated testing.
 
-## Структура проекта
+## Project structure
 
-```
+```text
 .
-├── docker-compose.yaml      # Файл для оркестрации сервисов
-├── post-merge               # Git hook для автоматического тестирования
-├── higgsfield-api/          # Основная директория приложения
-│   ├── Dockerfile             # Dockerfile для сборки образа
-│   ├── pytest.ini             # Конфигурация pytest
-│   ├── requirements/          # Зависимости проекта
+├── docker-compose.yaml      # File for service orchestration
+├── post-merge               # Git hook for automatic testing
+├── higgsfield-api/          # Main application directory
+│   ├── Dockerfile             # Dockerfile for building the image
+│   ├── pytest.ini             # Pytest configuration
+│   ├── requirements/          # Project dependencies
 │   │   └── base.txt
-│   ├── src/                   # Исходный код
-│   │   ├── main.py            # Точка входа в приложение FastAPI
-│   │   ├── app_factory.py     # Фабрика приложения
-│   │   ├── config.py          # Конфигурация и настройки
-│   │   ├── endpoints/         # API эндпоинты
-│   │   │   ├── auth/          # Аутентификация
-│   │   │   ├── higgsfield/    # Эндпоинты Higgsfield
-│   │   │   └── routes.py      # Маршрутизация
-│   │   ├── repository/        # Работа с базой данных
-│   │   │   ├── models/        # Модели данных
-│   │   │   └── core.py        # Инициализация БД
-│   │   ├── services/          # Бизнес-логика
-│   │   ├── schedulers/        # Планировщики задач
-│   │   └── utils/             # Утилиты
-│   └── tests/                 # Автоматизированные тесты
-└── README.md                # Этот файл
+│   ├── src/                   # Source code
+│   │   ├── main.py            # FastAPI application entry point
+│   │   ├── app_factory.py     # Application factory
+│   │   ├── config.py          # Configuration and settings
+│   │   ├── endpoints/         # API endpoints
+│   │   │   ├── auth/          # Authentication
+│   │   │   ├── higgsfield/    # Higgsfield endpoints
+│   │   │   └── routes.py      # Routing
+│   │   ├── repository/        # Database access
+│   │   │   ├── models/        # Data models
+│   │   │   └── core.py        # DB initialization
+│   │   ├── services/          # Business logic
+│   │   ├── schedulers/        # Task schedulers
+│   │   └── utils/             # Utilities
+│   └── tests/                 # Automated tests
+└── README.md                # This file
 ```
 
-## Как запустить
+## How to run
 
-Проект разработан для запуска в Docker-контейнерах.
+The project is designed to run in Docker containers.
 
-1. **Склонируйте репозиторий:**
+1. **Clone the repository:**
+
    ```bash
-   git clone <URL репозитория>
+   git clone <repository URL>
    cd hf
    ```
 
-2. **Создайте файл `.env`** в корневой директории проекта:
+2. **Create a `.env` file** in the project root:
+
    ```env
    DB_HOST=localhost
    DB_SOCKET=/path/to/socket
@@ -61,63 +63,71 @@
    UUID_TEST_CHECK=your-secret-uuid
    ```
 
-3. **Запустите сервисы с помощью Docker Compose:**
-   Эта команда соберет Docker-образ и запустит контейнеры в фоновом режиме.
+3. **Start the services with Docker Compose:**
+   This command will build the Docker image and start the containers in the background.
+
    ```bash
    docker-compose up -d --build
    ```
-   Если образ уже собран, можно использовать:
+
+   If the image is already built, you can use:
+
    ```bash
    docker-compose up -d
    ```
 
-4. Сервис будет доступен по адресу `http://localhost:8018`.
+4. The service will be available at `http://localhost:8018`.
 
 ## API
 
-### Аутентификация
+### Authentication
 
-#### Регистрация
-- **URL**: `/api/auth/registration`
-- **Метод**: `POST`
-- **Описание**: Регистрация нового клиента (требует админ-токен).
+#### Registration
 
-#### Вход
-- **URL**: `/api/auth/login`
-- **Метод**: `POST`
-- **Описание**: Аутентификация существующего клиента и получение токена.
+* **URL**: `/api/auth/registration`
+* **Method**: `POST`
+* **Description**: Registers a new client (requires an admin token).
 
-### Генерация видео
+#### Login
 
-#### Создание задачи генерации видео
-- **URL**: `/api/higgsfield/i2v/`
-- **Метод**: `POST`
-- **Описание**: Создает задачу для генерации видео из изображения.
-- **Заголовки**:
-  - `X-API-KEY`: API токен клиента
-- **Параметры формы**:
-  - `image`: Файл изображения
-  - `prompt`: Опциональный промпт для видео
-  - `motion`: Тип движения (GENERAL, DISINTEGRATION, и т.д.)
-  - `model`: Модель (lite, standard, turbo)
-  - `duration`: Длительность видео (3 или 5 секунд)
-  - `metadata`: Дополнительные метаданные в формате JSON
+* **URL**: `/api/auth/login`
+* **Method**: `POST`
+* **Description**: Authenticates an existing client and returns a token.
 
-### Проверка состояния сервиса (Health Check)
+### Video generation
 
-- **URL**: `/health/{uuid}`
-- **Метод**: `GET`
-- **Описание**: Проверяет, работает ли сервис.
-- **Параметры пути**:
-  - `uuid` (string): Секретный UUID, указанный в `.env` файле (`UUID_TEST_CHECK`).
+#### Create a video generation task
 
-## Тестирование
+* **URL**: `/api/higgsfield/i2v/`
+* **Method**: `POST`
+* **Description**: Creates a task to generate a video from an image.
+* **Headers**:
 
-Для запуска тестов выполните следующую команду:
+  * `X-API-KEY`: Client API token
+* **Form parameters**:
+
+  * `image`: Image file
+  * `prompt`: Optional prompt for the video
+  * `motion`: Motion type (GENERAL, DISINTEGRATION, etc.)
+  * `model`: Model (lite, standard, turbo)
+  * `duration`: Video duration (3 or 5 seconds)
+  * `metadata`: Additional metadata in JSON format
+
+### Service health check
+
+* **URL**: `/health/{uuid}`
+* **Method**: `GET`
+* **Description**: Checks whether the service is running.
+* **Path parameters**:
+
+  * `uuid` (string): Secret UUID specified in the `.env` file (`UUID_TEST_CHECK`).
+
+## Testing
+
+To run the tests, execute:
 
 ```bash
 docker-compose run --rm test
 ```
 
-Эта команда запустит отдельный контейнер, который выполнит тесты с помощью `pytest` и затем будет удален.
-
+This command will start a separate container, run the tests with `pytest`, and then remove the container.
