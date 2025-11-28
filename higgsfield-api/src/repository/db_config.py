@@ -1,3 +1,5 @@
+from pathlib import Path
+
 # from config import DB_USER, DB_PASSWORD, DB_HOST, DB_NAME, DB_SOCKET
 
 # TORTOISE_ORM = {
@@ -15,8 +17,14 @@
 # }
 
 
+_REPO_DIR = Path(__file__).resolve().parent
+_DB_DIR = _REPO_DIR / "db"
+_DB_DIR.mkdir(parents=True, exist_ok=True)
+_DB_PATH = _DB_DIR / "higgsfield.db"
+
+
 TORTOISE_ORM = {
-    "connections": {"default": "sqlite://src/repository/db/higgsfield.db"},
+    "connections": {"default": f"sqlite://{_DB_PATH}"},
     "apps": {
         "models": {
             "models": [

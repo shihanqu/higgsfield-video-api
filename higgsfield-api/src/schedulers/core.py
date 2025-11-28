@@ -1,20 +1,41 @@
 import asyncio
 import logging
+import sys
+from pathlib import Path
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+# Add parent directories to path for config import
+_APP_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_APP_ROOT) not in sys.path:
+    sys.path.insert(0, str(_APP_ROOT))
+
+from config import (
+    RESULT_DELIVERY_INTERVAL,
+    TASK_QUEUE_POLL_INTERVAL,
+    TASK_STATUS_MAX_INSTANCES,
+    TASK_STATUS_POLL_INTERVAL,
+)
 
 from ..repository.models.task import Task
 from .delivery import send_results_to_client
 from .task import (
-    check_account_auth,
     check_task_status,
     process_i2v_tasks,
+    process_soul_tasks,
+    process_t2i_tasks,
     update_account_balance,
 )
 
 TASK_TYPE_HANDLERS = {
     "i2v": {
         "handler": process_i2v_tasks,
+    },
+    "t2i": {
+        "handler": process_t2i_tasks,
+    },
+    "soul": {
+        "handler": process_soul_tasks,
     },
 }
 
@@ -24,11 +45,27 @@ logger = logging.getLogger("higgsfield")
 def start_scheduler() -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="UTC")
 
-    scheduler.add_job(process_queued_tasks, "interval", seconds=3, max_instances=1)
-    scheduler.add_job(check_task_status, "interval", seconds=3, max_instances=1)
-    scheduler.add_job(send_results_to_client, "interval", seconds=2, max_instances=1)
-    scheduler.add_job(check_account_auth, "interval", seconds=60, max_instances=1)
-    scheduler.add_job(update_account_balance, "interval", seconds=60, max_instances=1)
+    scheduler.add_job(
+        process_queued_tasks,
+        "interval",
+        seconds=TASK_QUEUE_POLL_INTERVAL,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        check_task_status,
+        "interval",
+        seconds=TASK_STATUS_POLL_INTERVAL,
+        max_instances=TASK_STATUS_MAX_INSTANCES,
+    )
+    scheduler.add_job(
+        send_results_to_client,
+        "interval",
+        seconds=RESULT_DELIVERY_INTERVAL,
+        max_instances=1,
+    )
+    # Update account balance every 10 minutes (not critical, just for display)
+    scheduler.add_job(update_account_balance, "interval", minutes=10, max_instances=1)
+    # Note: Auth refresh removed - use 'python scripts/manage_accounts.py login --force' if session expires
     scheduler.start()
 
 

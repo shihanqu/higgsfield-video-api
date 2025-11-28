@@ -6,7 +6,7 @@ from tortoise import Model, fields
 
 class Task(Model):
     id = fields.IntField(pk=True)
-    task_id = fields.UUIDField(default=uuid.uuid4, unique=True, index=True)
+    task_id = fields.UUIDField(default=uuid.uuid4, unique=True, db_index=True)
     api_task_id = fields.CharField(null=True, max_length=50)
     api_status = fields.CharField(max_length=20, null=True)
     type = fields.CharField(max_length=20)
@@ -25,6 +25,7 @@ class Task(Model):
     parameters_json = fields.JSONField()
     metadata = fields.JSONField(default=dict)
     result = fields.JSONField(default=list)
+    message = fields.TextField(null=True)  # Error message or status details
     is_delivered = fields.BooleanField(default=False)
 
     created_at = fields.DatetimeField(auto_now_add=True)

@@ -13,7 +13,7 @@ class Client(Model):
     password = fields.TextField(null=False)
     url = fields.TextField(null=True)
     token = fields.CharField(
-        default=lambda: secrets.token_hex(16), unique=True, index=True, max_length=32
+        default=lambda: secrets.token_hex(16), unique=True, db_index=True, max_length=32
     )
     is_admin = fields.BooleanField(default=False)
     is_active = fields.BooleanField(default=True)

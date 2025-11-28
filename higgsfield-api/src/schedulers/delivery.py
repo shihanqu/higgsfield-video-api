@@ -67,9 +67,11 @@ async def send_task_with_retry(task: Task, retries: int = 10, delay: int = 60):
     """
     client = await Client.get(id=task.client_id)
     if not client.url:
-        logger.error(f"No URL for task_id: {task.id}")
-        task.retries = retries
+        # No webhook URL - mark as delivered (for local clients)
+        task.is_delivered = True
+        task.status = task.status.split("_")[0]  # Remove _retry suffix
         await task.save()
+        logger.debug(f"Task {task.task_id} has no webhook URL - marked as delivered (local client)")
         return
 
     async with httpx.AsyncClient() as httpx_client:

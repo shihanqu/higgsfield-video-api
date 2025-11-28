@@ -5,11 +5,11 @@ import logging
 import random
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import httpx
 from PIL import Image
-from rebrowser_playwright.async_api import async_playwright
+# Note: playwright.sync_api is imported inside _refresh_account_auth_sync to avoid startup issues
 
 from config import APP_ORIGIN, CLERK_APIVER, CLERK_BASE, CLERK_JSVER
 from src.utils.exceptions import (
@@ -17,6 +17,7 @@ from src.utils.exceptions import (
     AuthStorageError,
     CookieParsingError,
     FileUploadError,
+    ImageGenerationError,
     MotionConfigError,
     SessionError,
     TokenMintError,
@@ -433,9 +434,16 @@ async def get_session_id_via_api(client: httpx.AsyncClient) -> Optional[str]:
             logger.error(f"Invalid JSON response from Clerk API: {e}")
             raise SessionError(f"Invalid JSON response from Clerk API: {e}")
 
-        client_data = j.get("client", j)
+        client_data = None
+        if isinstance(j, dict):
+            client_data = j.get("client") or j
+        elif isinstance(j, list) and j:
+            first_item = j[0]
+            if isinstance(first_item, dict):
+                client_data = first_item.get("client") or first_item
+
         if not isinstance(client_data, dict):
-            logger.error("Invalid client data format in API response")
+            logger.error("Invalid client data format in API response: %s", j)
             raise SessionError("Invalid client data format in API response")
 
         # Try last active session first
@@ -992,16 +1000,143 @@ async def generate_video(
         raise VideoGenerationError(f"Unexpected error during video generation: {e}")
 
 
-async def refresh_account_auth(account: HiggsfieldAccount):
-    """Load saved session cookies, visit Higgsfield, and save refreshed storage state."""
+async def generate_image(
+    prompt: str,
+    model: str,
+    aspect_ratio: str,
+    guidance_scale: float,
+    seed: Optional[int],
+    account: HiggsfieldAccount,
+    use_unlim: bool = True,
+) -> Dict[str, Any]:
+    """Generate an image from a text prompt."""
 
-    if not account.cookies_json:
-        logger.error("No cookies provided for account %s", account.id)
-        raise ValueError("No cookies provided")
+    MODEL_ENDPOINTS = {
+        "lite": "nano-banana-2",
+        "standard": "flux-2",
+        "turbo": "seedream",
+        "text2image": "text2image",
+        "text2image_soul": "text2image-soul",
+        "text2image-soul": "text2image-soul",
+        "text2image_gpt": "text2image-gpt",
+        "text2image-gpt": "text2image-gpt",
+        "flux_kontext": "flux-kontext",
+        "flux-kontext": "flux-kontext",
+        "canvas": "canvas",
+        "canvas_soul": "canvas-soul",
+        "canvas-soul": "canvas-soul",
+        "wan2_2_image": "wan2-2-image",
+        "wan2-2-image": "wan2-2-image",
+        "seedream": "seedream",
+        "nano_banana": "nano-banana",
+        "nano-banana": "nano-banana",
+        "nano_banana_animal": "nano-banana-animal",
+        "nano-banana-animal": "nano-banana-animal",
+        "nano_banana_2": "nano-banana-2",
+        "nano-banana-2": "nano-banana-2",
+        "keyframes_faceswap": "keyframes-faceswap",
+        "keyframes-faceswap": "keyframes-faceswap",
+        "qwen_camera_control": "qwen-camera-control",
+        "qwen-camera-control": "qwen-camera-control",
+        "viral_transform_image": "viral-transform-image",
+        "viral-transform-image": "viral-transform-image",
+        "flux_2": "flux-2",
+        "flux-2": "flux-2",
+        "game_dump": "game-dump",
+        "game-dump": "game-dump",
+    }
+    ASPECT_TO_DIMENSIONS: Dict[str, Tuple[int, int]] = {
+        "1:1": (1024, 1024),
+        "3:4": (896, 1152),
+        "4:3": (1152, 896),
+        "16:9": (1344, 768),
+        "9:16": (768, 1344),
+    }
 
-    async with async_playwright(timeout=120) as p:
-        browser = await p.chromium.launch(
-            headless=True,  # run headless for automation
+    if not prompt or not prompt.strip():
+        raise ImageGenerationError("Prompt cannot be empty")
+    if not aspect_ratio or not isinstance(aspect_ratio, str):
+        raise ImageGenerationError("Aspect ratio must be provided")
+
+    dimensions = ASPECT_TO_DIMENSIONS.get(aspect_ratio)
+    if not dimensions:
+        raise ImageGenerationError(
+            f"Unsupported aspect ratio '{aspect_ratio}'. "
+            f"Supported values: {', '.join(ASPECT_TO_DIMENSIONS)}"
+        )
+
+    width, height = dimensions
+    model_normalized = model.strip()
+    model_key = model_normalized.lower()
+    model_endpoint = MODEL_ENDPOINTS.get(model_key)
+    if not model_endpoint:
+        # Fall back to replacing underscores with hyphens, which matches most Higgsfield slugs
+        model_endpoint = model_key.replace("_", "-")
+
+    payload: Dict[str, Any] = {
+        "prompt": prompt,
+        "aspect_ratio": aspect_ratio,
+        "width": width,
+        "height": height,
+        "batch_size": 1,
+        "use_unlim": use_unlim,
+        "resolution": "2k",
+        "input_images": [],
+        "enhance_prompt": True,
+    }
+    if seed is not None:
+        payload["seed"] = seed
+
+    try:
+        token = await get_token(account)
+
+        async with httpx.AsyncClient(timeout=120) as client:
+            url = f"https://fnf.higgsfield.ai/jobs/{model_endpoint}"
+            headers = {"Authorization": f"Bearer {token}"}
+            res = await client.post(
+                url,
+                headers=headers,
+                json={"params": payload, "use_unlim": use_unlim},
+            )
+            res.raise_for_status()
+
+            try:
+                data = res.json()
+            except json.JSONDecodeError as e:
+                raise ImageGenerationError(
+                    f"Invalid JSON response from image generation API: {e}"
+                )
+
+            logger.info(
+                "Successfully submitted image generation job. Job ID(s): %s",
+                data.get("job_sets", []),
+            )
+            return data
+
+    except httpx.HTTPStatusError as e:
+        raise ImageGenerationError(
+            f"Image generation API request failed with status {e.response.status_code}: {e}"
+        )
+    except httpx.RequestError as e:
+        raise ImageGenerationError(f"Network error during image generation: {e}")
+    except (SessionError, TokenMintError, AuthStorageError) as e:
+        raise ImageGenerationError(f"Authentication failed: {e}")
+    except Exception as e:
+        raise ImageGenerationError(f"Unexpected error during image generation: {e}")
+
+
+def _refresh_account_auth_sync(cookies_json: list, account_id: int) -> list:
+    """
+    Synchronous helper to refresh account auth using Playwright.
+    
+    This runs in a thread pool to avoid blocking the async event loop.
+    Returns the new cookies list.
+    """
+    from playwright.sync_api import sync_playwright
+    
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--disable-features=BlockThirdPartyCookies",
@@ -1013,13 +1148,13 @@ async def refresh_account_auth(account: HiggsfieldAccount):
         )
 
         # Load existing cookies into context
-        context = await browser.new_context(
-            storage_state={"cookies": account.cookies_json}
+        context = browser.new_context(
+            storage_state={"cookies": cookies_json}
         )
-        page = await context.new_page()
+        page = context.new_page()
 
         logger.info("Opening Higgsfield with saved cookies...")
-        await page.goto("https://higgsfield.ai/create/video")
+        page.goto("https://higgsfield.ai/create/video")
 
         current_url = page.url
         logger.info(f"Current URL: {current_url}")
@@ -1030,23 +1165,47 @@ async def refresh_account_auth(account: HiggsfieldAccount):
             logger.info("Session restored successfully, user is logged in.")
 
         # Save the refreshed storage state
-        temp_path = Path(f"{account.id}.json")
-        await page.context.storage_state(path=temp_path)
+        temp_path = Path(f"{account_id}.json")
+        page.context.storage_state(path=str(temp_path))
         logger.info(f"Saved refreshed auth state to {temp_path}")
 
-        await browser.close()
+        browser.close()
+        
         new_auth = json.loads(temp_path.read_text())
         new_cookies = [
             c
             for c in new_auth.get("cookies", [])
             if "higgsfield.ai" in c.get("domain", "")
         ]
-        account.cookies_json = new_cookies
-        account.last_updated_at = datetime.now(timezone.utc)
-        await account.save()
         temp_path.unlink()
+        
+        return new_cookies
 
-        logger.info(f"Saved refreshed auth state to {account.id}")
+
+async def refresh_account_auth(account: HiggsfieldAccount):
+    """Load saved session cookies, visit Higgsfield, and save refreshed storage state."""
+    import asyncio
+    import concurrent.futures
+
+    if not account.cookies_json:
+        logger.error("No cookies provided for account %s", account.id)
+        raise ValueError("No cookies provided")
+
+    # Run sync Playwright in a thread pool to avoid blocking
+    loop = asyncio.get_event_loop()
+    with concurrent.futures.ThreadPoolExecutor() as pool:
+        new_cookies = await loop.run_in_executor(
+            pool,
+            _refresh_account_auth_sync,
+            account.cookies_json,
+            account.id,
+        )
+
+    account.cookies_json = new_cookies
+    account.last_updated_at = datetime.now(timezone.utc)
+    await account.save()
+
+    logger.info(f"Saved refreshed auth state for account {account.id}")
 
 
 async def get_account_info(account: HiggsfieldAccount):
@@ -1073,3 +1232,103 @@ async def get_last_used_account():
         account.last_used_at = datetime.now(timezone.utc)
         await account.save()
         return account
+
+
+async def ensure_authenticated_account():
+    """
+    Ensure we have a valid authenticated Higgsfield account.
+    
+    If no account exists in the database but auth.json exists, it will
+    automatically add the account from auth.json.
+    
+    Returns:
+        HiggsfieldAccount: A valid, authenticated account
+        
+    Raises:
+        RuntimeError: If no valid account or auth.json available
+    """
+    from environs import Env
+    
+    # First, try to get an existing account from database
+    account = await get_last_used_account()
+    
+    if account:
+        # Verify the account's token is still valid
+        try:
+            await get_token(account)
+            logger.info("Using existing account: %s", account.username)
+            return account
+        except Exception as e:
+            logger.warning("Existing account token invalid: %s", e)
+            # Will try to re-add from auth.json below
+    
+    # No valid account in database - try to add from auth.json
+    logger.info("No valid account in database. Checking for auth.json...")
+    
+    # Get paths
+    app_root = Path(__file__).resolve().parent.parent.parent
+    auth_json_path = app_root / "auth.json"
+    
+    if not auth_json_path.exists():
+        raise RuntimeError(
+            f"No auth.json found at {auth_json_path}. "
+            "Please run 'python scripts/manage_accounts.py login' to authenticate."
+        )
+    
+    # Load cookies from auth.json
+    try:
+        auth_data = json.loads(auth_json_path.read_text(encoding="utf-8"))
+        cookies = auth_data.get("cookies", [])
+        
+        # Filter to Higgsfield cookies only
+        hf_cookies = [c for c in cookies if "higgsfield.ai" in c.get("domain", "")]
+        
+        if not hf_cookies:
+            raise RuntimeError(
+                "auth.json exists but contains no Higgsfield cookies. "
+                "Please run 'python scripts/manage_accounts.py login --force' to re-authenticate."
+            )
+        
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"Invalid auth.json format: {e}")
+    
+    # Get username from .env.credentials
+    env = Env()
+    for candidate in (
+        app_root / ".env.credentials",
+        app_root / ".env",
+    ):
+        if candidate.exists():
+            env.read_env(candidate)
+            break
+    
+    username = env.str("HIGGSFIELD_LOGIN_EMAIL", default="local@higgsfield.ai")
+    
+    # Add or update account in database
+    existing_account = await HiggsfieldAccount.get_or_none(username=username)
+    if existing_account:
+        existing_account.cookies_json = hf_cookies
+        existing_account.is_active = True
+        existing_account.last_updated_at = datetime.now(timezone.utc)
+        await existing_account.save()
+        logger.info("Updated existing account: %s", username)
+        account = existing_account
+    else:
+        account = await HiggsfieldAccount.create(
+            username=username,
+            cookies_json=hf_cookies,
+            is_active=True,
+        )
+        logger.info("Created new account from auth.json: %s", username)
+    
+    # Verify the token works
+    try:
+        await get_token(account)
+    except Exception as e:
+        raise RuntimeError(
+            f"auth.json credentials are invalid or expired: {e}. "
+            "Please run 'python scripts/manage_accounts.py login --force' to re-authenticate."
+        )
+    
+    logger.info("Successfully authenticated as: %s", account.username)
+    return account

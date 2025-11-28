@@ -56,6 +56,12 @@ class VideoGenerationError(HiggsfieldError):
     pass
 
 
+class ImageGenerationError(HiggsfieldError):
+    """Raised when image generation fails."""
+
+    pass
+
+
 class MotionConfigError(HiggsfieldError):
     """Raised when motion configuration is invalid."""
 
